@@ -4,7 +4,7 @@
  * Given an HTML page & its URL, returns a URL object of HTML's sorted
  * embedded links. I haven't implemented the http request functionality 
  * locally, to allow for flexibility on the user's end with respect to: 
- * (A) their preffered means of conducting http requests
+ * (A) their preferred means of conducting http requests
  * (B) keeping this code lightweight by leaving out library requirements.
  */
 
