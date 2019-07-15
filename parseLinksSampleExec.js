@@ -11,7 +11,7 @@ const linkParser = require('./parseLinks').parser;
 function requestSite(siteUrl) {
   return new Promise((resolve, reject) => {
     request(siteUrl, (err, res, html) => {
-      if (err || res.statusCode != 200) {
+      if (err || res.statusCode != 200 || !html) {
         return reject(`err retrieving data: ${err}`);
       }
       let links = linkParser(html, siteUrl);
