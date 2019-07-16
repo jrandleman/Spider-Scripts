@@ -59,20 +59,23 @@ exports.parser = (html, siteUrl) => {
     let start = 0;
     while(true) { // While still links with prefix to scraped.
       start = html.indexOf(prefix, start) + prefixSize;
-      let linkType = getLinkHtmlType(start, html);
       if(start - prefixSize === -1) break; // No more links with prefix.
+      if(html[start] == '"' || html[start+1] == '"') continue; // Empty url.
+      let linkType = getLinkHtmlType(start, html);
       let link = html.slice(start, html.indexOf('"', start));
       if(link.slice(0,2) == '//') link = 'https:' + link;
       if(link.slice(0, 4) != 'http') { // Extends current url.
-        let linkHead = (link[0] == '/') ? rootUrl : lastFileUrl;
-        link = linkHead + ((linkHead[linkHead.length - 1] != '/') ? '/' + link : link); 
+        let linkHead = (link[0] == '/') ? rootUrl : (link[0] == '#') ? siteUrl : lastFileUrl;
+        let lastLinkHeadChar = linkHead[linkHead.length - 1];
+        link = linkHead + ((lastLinkHeadChar != '/' && link[0] != '#') ? '/' + link : link); 
       }
+      link = formattedLink(link);
       if(linkType == null) { // Couldn't find tag/rel/type for link.
         let linkExtension = getLinkExtension(link);
-        linkType = getLinkExtensionType(linkExtension);
+        linkType = getLinkExtensionType(siteUrl, link, linkExtension);
       }
       if(links[linkType] == undefined) links[linkType] = [];
-      if(links[linkType].indexOf(link) === -1) links[linkType].push(formattedLink(link));
+      if(links[linkType].indexOf(link) === -1) links[linkType].push(link);
     }
   }
   if(Object.keys(links).length === 0) return null;
@@ -113,7 +116,7 @@ function getLinkExtension(link) { // Either at the end, or embedded w/in pre-'?'
 }
 
 // Returns link extension's file type.
-function getLinkExtensionType(extension) {
+function getLinkExtensionType(siteUrl, link, extension) {
   let fileTypeSections = Object.keys(FILE_EXTENSIONS);
   for(let fileType of fileTypeSections) {
     let fileTypeObj = FILE_EXTENSIONS[fileType];
@@ -122,6 +125,7 @@ function getLinkExtensionType(extension) {
       if(fileTypeObj[typeName].indexOf(extension) != -1) return typeName;
     }
   }
+  if(link.includes(siteUrl)) return 'extendsUrl';
   return 'other';
 }
 
@@ -129,15 +133,16 @@ function getLinkExtensionType(extension) {
 // HELPER FUNCTIONS
 /******************************************************************************/
 
-// Returns link's type based off of tag/rel/type, if exists.
 function getLinkHtmlType(start, html) {
   // Check link's <tag>.
   let tagStartIdx = html.lastIndexOf('<', start) + 1;
-  if(tagStartIdx == 0) return null;
-  let tagPrefix = html.slice(tagStartIdx, html.indexOf(' ', tagStartIdx));
-  if(tagPrefix == 'script' || tagPrefix == 'img') return tagPrefix;
+  let tagEndIdx = html.lastIndexOf('>', start) - 1;
+  if(tagStartIdx != 0 && tagStartIdx > tagEndIdx) {
+    let tagPrefix = html.slice(tagStartIdx, html.indexOf(' ', tagStartIdx));
+    if(tagPrefix == 'script' || tagPrefix == 'img') return tagPrefix;
+  }
   // Check link's 'rel' attribute.
-  let tagEndIdx = html.indexOf('>', start);
+  tagEndIdx = html.indexOf('>', start);
   let relIdx = html.indexOf('rel="', start) + 5;
   if(relIdx != 4 && relIdx < tagEndIdx) {
     let relStr = html.slice(relIdx, 14);
@@ -159,6 +164,6 @@ function formattedLink(link) {
   let headIdx = link.indexOf('//') + 2;
   let httpHead = link.slice(0, headIdx);
   let linkTail = link.slice(headIdx).replace(/\/\//g, '/')
-                      .replace(/&amp;/g, '&').replace('javascript:void(0);', '');
+                     .replace(/&amp;/g, '&').replace('javascript:void(0);', '');
   return httpHead + linkTail;
 }
