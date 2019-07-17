@@ -48,15 +48,13 @@ const FILE_EXTENSIONS =
 /******************************************************************************/
 
 // Returns an object of external urls within html from siteUrl.
-exports.parser = (html, siteUrl) => {
+exports.Parser = (html, siteUrl) => {
   let urls = getSiteUrlExtensions(siteUrl);
   // W/o last filepath,  with last filepath.
-  let rootUrl = urls[0], lastFileUrl = urls[1];
-  let linkPrefixes = ['src="', 'href="'];
+  let rootUrl = urls[0], lastFileUrl = urls[1], linkPrefixes = ['src="', 'href="'];
   var links = {};
   for(let prefix of linkPrefixes) { // For each link prefix.
-    let prefixSize = prefix.length;
-    let start = 0;
+    let start = 0, prefixSize = prefix.length;
     while(true) { // While still links with prefix to scraped.
       start = html.indexOf(prefix, start) + prefixSize;
       if(start - prefixSize === -1) break; // No more links with prefix.
@@ -65,21 +63,20 @@ exports.parser = (html, siteUrl) => {
       let link = html.slice(start, html.indexOf('"', start));
       if(link.slice(0,2) == '//') link = 'https:' + link;
       if(link.slice(0, 4) != 'http') { // Extends current url.
-        let linkHead = (link[0] == '/') ? rootUrl : (link[0] == '#') ? siteUrl : lastFileUrl;
-        let lastLinkHeadChar = linkHead[linkHead.length - 1];
-        link = linkHead + ((lastLinkHeadChar != '/' && link[0] != '#') ? '/' + link : link); 
+        let header = (link[0] == '/') ? rootUrl : (link[0] == '#') ? siteUrl : lastFileUrl;
+        link = header + ((header[header.length-1] != '/' && link[0] != '#') ? '/' + link : link);
       }
       link = formattedLink(link);
-      if(linkType == null) { // Couldn't find tag/rel/type for link.
+      if(!linkType) { // Couldn't find tag/rel/type for link.
         let linkExtension = getLinkExtension(link);
         linkType = getLinkExtensionType(siteUrl, link, linkExtension);
       }
-      if(links[linkType] == undefined) links[linkType] = [];
+      if(!links[linkType]) links[linkType] = [];
       if(links[linkType].indexOf(link) === -1) links[linkType].push(link);
     }
   }
   if(Object.keys(links).length === 0) return null;
-  return links;
+  return sortedLinks(links);
 }
 
 /******************************************************************************/
@@ -88,12 +85,11 @@ exports.parser = (html, siteUrl) => {
 
 // Returns base/full site urls w/o & w/ last filename extension.
 function getSiteUrlExtensions(siteUrl) {
-  var lastFileName = '';
   let firstSlashIdx = siteUrl.indexOf('/', 9); // After 'https://'
   var pageIdx = siteUrl.lastIndexOf('/'), lastFileIdx = siteUrl.length;
   if(pageIdx != 6 && pageIdx != 7 && pageIdx != -1) { // Not 'http://' nor 'https://'
     lastFileIdx = siteUrl.lastIndexOf('/', pageIdx - 1);
-    if(lastFileIdx != -1) lastFileName = siteUrl.slice(lastFileIdx, pageIdx + 1);
+    var lastFileName = (lastFileIdx != -1) ? siteUrl.slice(lastFileIdx, pageIdx + 1) : '';
   }
   var baseUrl = (lastFileIdx != -1) ? siteUrl.slice(0, lastFileIdx) : siteUrl;
   var rootUrl = (firstSlashIdx != -1) ? siteUrl.slice(0, firstSlashIdx) : siteUrl;
@@ -105,9 +101,7 @@ function getLinkExtension(link) { // Either at the end, or embedded w/in pre-'?'
   var fileExtension = link.slice(link.lastIndexOf('.') + 1);
   let qMarkLastIdx = link.lastIndexOf('?');
   if(qMarkLastIdx == link.indexOf('?') && qMarkLastIdx != -1) { // Embedded extension.
-    let dotIdx = link.lastIndexOf('.', qMarkLastIdx);
-    let slashIdx = link.lastIndexOf('/', qMarkLastIdx);
-    let idx = (dotIdx > slashIdx) ? dotIdx : slashIdx;
+    let idx = Math.max(link.lastIndexOf('.', qMarkLastIdx), link.lastIndexOf('/', qMarkLastIdx));
     if(idx != -1 && idx >= qMarkLastIdx - 7) { // Valid embedded extension. 7 = longest extnsn.
       fileExtension = link.slice(idx, qMarkLastIdx).replace(/\./g, '');
     }
@@ -117,12 +111,9 @@ function getLinkExtension(link) { // Either at the end, or embedded w/in pre-'?'
 
 // Returns link extension's file type.
 function getLinkExtensionType(siteUrl, link, extension) {
-  let fileTypeSections = Object.keys(FILE_EXTENSIONS);
-  for(let fileType of fileTypeSections) {
-    let fileTypeObj = FILE_EXTENSIONS[fileType];
-    let fileTypeNames = Object.keys(fileTypeObj);
-    for(let typeName of fileTypeNames) {
-      if(fileTypeObj[typeName].indexOf(extension) != -1) return typeName;
+  for(let type in FILE_EXTENSIONS) {
+    for(let subtype in FILE_EXTENSIONS[type]) {
+      if(FILE_EXTENSIONS[type][subtype].indexOf(extension) != -1) return subtype;
     }
   }
   if(link.includes(siteUrl)) return 'extendsUrl';
@@ -133,28 +124,35 @@ function getLinkExtensionType(siteUrl, link, extension) {
 // HELPER FUNCTIONS
 /******************************************************************************/
 
+// Returns link's type based off of tag/rel/type, if exists.
 function getLinkHtmlType(start, html) {
-  // Check link's <tag>.
+  var linkTag = getLinkTag(start, html);
+  if(linkTag) return linkTag;
+  var relAttrib = getLinkAttribute(start, html, 'rel="', 'stylesheet', 'shortcut icon');
+  if(relAttrib) return relAttrib;
+  var typeAttrib = getLinkAttribute(start, html, 'type="', 'text/css', 'image/x-icon');
+  return typeAttrib;
+}
+
+// Returns link's <tag>.
+function getLinkTag(start, html) {
   let tagStartIdx = html.lastIndexOf('<', start) + 1;
-  let tagEndIdx = html.lastIndexOf('>', start) - 1;
+  let tagEndIdx = html.lastIndexOf('>', start) + 1;
   if(tagStartIdx != 0 && tagStartIdx > tagEndIdx) {
     let tagPrefix = html.slice(tagStartIdx, html.indexOf(' ', tagStartIdx));
     if(tagPrefix == 'script' || tagPrefix == 'img') return tagPrefix;
   }
-  // Check link's 'rel' attribute.
-  tagEndIdx = html.indexOf('>', start);
-  let relIdx = html.indexOf('rel="', start) + 5;
-  if(relIdx != 4 && relIdx < tagEndIdx) {
-    let relStr = html.slice(relIdx, 14);
-    if(relStr.includes('stylesheet'))    return 'style';
-    if(relStr.includes('shortcut icon')) return 'img';
-  }
-  // Check link's 'type' attribute.
-  let typeIdx = html.indexOf('type="', start) + 6;
-  if(typeIdx != 5 && typeIdx < tagEndIdx) {
-    let relStr = html.slice(typeIdx, 14);
-    if(relStr.includes('text/css'))     return 'style';
-    if(relStr.includes('image/x-icon')) return 'img';
+  return null;
+}
+
+// Returns link's 'rel' or 'type' attribute.
+function getLinkAttribute(start, html, attrib, css, img) {
+  let attribIdx = html.indexOf(attrib, start) + attrib.length;
+  let tagEndIdx = html.indexOf('>', start);
+  if(attribIdx != attrib.length - 1 && attribIdx < tagEndIdx) {
+    let attribStr = html.slice(attribIdx, 14);
+    if(attribStr.includes(css)) return 'style';
+    if(attribStr.includes(img)) return 'img';
   }
   return null;
 }
@@ -166,4 +164,51 @@ function formattedLink(link) {
   let linkTail = link.slice(headIdx).replace(/\/\//g, '/')
                      .replace(/&amp;/g, '&').replace('javascript:void(0);', '');
   return httpHead + linkTail;
+}
+
+/******************************************************************************/
+// LINK SORTING FUNCTIONS
+/******************************************************************************/
+
+// Returns an array of defined file extensions from 'FILE_EXTENSIONS'.
+function getDefinedExtensions() {
+  var definedExtensions = [];
+  for(let type in FILE_EXTENSIONS) {
+    for(let subtype in FILE_EXTENSIONS[type]) {
+      definedExtensions.push(...FILE_EXTENSIONS[type][subtype]);
+    }
+  }
+  return definedExtensions;
+}
+
+// Sorts an object's keys and their value arrays, & puts 'extendsUrl' & 'other' 
+// link-types at the end of the object.
+function sortKeyValueArrays(obj, sortValues) {
+  if(sortValues) for(let key in obj) obj[key] = obj[key].sort();
+  var sortedObj = {};
+  Object.keys(obj).sort().forEach((sequentialKey) => {
+    if(sequentialKey == 'other' || sequentialKey == 'extendsUrl') return;
+    sortedObj[sequentialKey] = obj[sequentialKey];
+  });
+  if(obj['extendsUrl']) sortedObj['extendsUrl'] = obj['extendsUrl'];
+  if(obj['other']) sortedObj['other'] = obj['other'];
+  return sortedObj;
+}
+
+// Create sorted extension-subtype objects within each link-type 'links' key.
+function sortedLinks(links) {
+  let definedExtensions = getDefinedExtensions();
+  for(let linkType in links) {
+    var type = {};
+    for(let link of links[linkType]) {
+      let extension = getLinkExtension(link);
+      if(definedExtensions.indexOf(extension) === -1) extension = 'other';
+      if(!type[extension]) type[extension] = [];
+      type[extension].push(link);
+    }
+    let names = Object.keys(type);
+    type = (names.length === 1) ? type[names[0]] : sortKeyValueArrays(type, true);
+    links[linkType] = type;
+  }
+  return sortKeyValueArrays(links, false);
 }
