@@ -4,12 +4,10 @@
 
 __Downloads:__
 * parseLinks.js is ready for download as is, requiring no external libraries.
-* To test parseLinks.js with parseLinksSampleExec.js, make sure you have:
-  - [npm request](https://www.npmjs.com/package/request) installed
-  - both files in the same folder (or change the 'require' filepath)
+* To test parseLinks.js with parseLinksSampleExec.js, make sure you have [npm request](https://www.npmjs.com/package/request) installed
 
 __Usage:__
-* Start your programs making requests & using the link parser with this dependancy:
-  - const linkParser = require('\<filepath\>/parseLinks').parser; 
+* Begin programs making requests & using the link parser with this dependancy:
+  - const linkParser = require('\<filepath\>/parseLinks').Parser; 
 * Once you've downloaded a URL's html page, call the function:
   - var linksObject = linkParser(html, url);
