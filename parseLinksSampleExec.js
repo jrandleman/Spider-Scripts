@@ -1,7 +1,7 @@
-//Author: Jordan Randleman - Sample HTML Link Parser Execution
+// Author: Jordan Randleman - Sample HTML Link Parser Execution
 
 const request = require('request');
-const linkParser = require('./parseLinks').parser;
+const linkParser = require('./parseLinks').Parser;
 
 /******************************************************************************/
 // SAMPLE MAIN EXECUTION OF THE HTML LINK PARSER
@@ -15,7 +15,7 @@ function requestSite(siteUrl) {
         return reject(`err retrieving data: ${err}`);
       }
       let links = linkParser(html, siteUrl);
-      if(links == null) return reject(`No external links from: ${siteUrl}`);
+      if(!links) return reject(`No external links from: ${siteUrl}`);
       return resolve(links);
     });
   });
@@ -23,19 +23,12 @@ function requestSite(siteUrl) {
 
 // Executes page request.
 function linkParserExec() {
-  var siteUrl = 'https://jrandleman.github.io/index.html';
+  var siteUrl = 'https://github.com/jrandleman';
   requestSite(siteUrl).then((links) => {
-    let linkTypes = Object.keys(links);
-    for(let linkType of linkTypes) {
-      console.log(linkType + ':');
-      for(let link of links[linkType]) {
-        console.log('\t' + link + '\n');
-      }
-    }
+    console.log(links);
   }).catch((err) => {
     console.log(err);
   });
 }
 
 linkParserExec();
-
