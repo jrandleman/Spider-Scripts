@@ -51,7 +51,8 @@ const FILE_EXTENSIONS =
 exports.Parser = (html, siteUrl) => {
   let urls = getSiteUrlExtensions(siteUrl);
   // W/o last filepath,  with last filepath.
-  let rootUrl = urls[0], lastFileUrl = urls[1], linkPrefixes = ['src="', 'href="'];
+  let rootUrl = urls[0], lastFileUrl = urls[1];
+  let linkPrefixes = ['src="', 'SRC="', 'href="', 'HREF="'];
   var links = {};
   for(let prefix of linkPrefixes) { // For each link prefix.
     let start = 0, prefixSize = prefix.length;
