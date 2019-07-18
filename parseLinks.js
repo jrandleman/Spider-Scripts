@@ -49,34 +49,22 @@ const FILE_EXTENSIONS =
 
 // Returns an object of external urls within html from siteUrl.
 exports.Parser = (html, siteUrl) => {
-  let urls = getSiteUrlExtensions(siteUrl);
-  // W/o last filepath,  with last filepath.
-  let rootUrl = urls[0], lastFileUrl = urls[1];
-  let linkPrefixes = ['src="', 'SRC="', 'href="', 'HREF="', 'http'];
+  let linkPrefixes = ['src=', 'SRC=', 'href=', 'HREF=', 'http'];
   var links = {};
   for(let prefix of linkPrefixes) { // For each link prefix.
-    let start = 0, prefixSize = (prefix === 'http') ? 1 : prefix.length;
+    let start = 0, prefixSize = (prefix === 'http') ? 1 : prefix.length + 1;
     while(true) { // While still links with prefix to scraped.
       start = html.indexOf(prefix, start) + prefixSize;
       if(start - prefixSize === -1) break; // No more links with prefix.
       if(invalidLink(html, start, prefix)) continue;
-      let linkType = (prefix === 'http') ? null : getLinkHtmlType(start, html);
-      let endOfLink = getEndOfLinkIndex(html, start);
-      let link = html.slice(start, endOfLink).replace(/\\\//g, '/');
-      if(prefix === 'http') link = decodedLink(html[start - 1] + link);
-      if(link.slice(0,2) == '//') link = 'https:' + link;
-      if(link.slice(0, 4) != 'http') { // Extends current url.
-        let header = (link[0] == '/') ? rootUrl : (link[0] == '#') ? siteUrl : lastFileUrl;
-        link = header + ((header[header.length-1] != '/' && link[0] != '#') ? '/' + link : link);
-      }
-      link = formattedLink(link);
+      let linkType = getLinkHtmlType(html, start, prefix);
+      let link = getLink(html, start, prefix, siteUrl);
       if(!link.includes('//')) continue;
       if(!linkType) { // Couldn't find tag/rel/type for link.
-        let linkExtension = getLinkExtension(link);
-        linkType = getLinkExtensionType(siteUrl, link, linkExtension);
+        linkType = getLinkExtensionType(siteUrl, link, getLinkExtension(link));
       }
       if(!links[linkType]) links[linkType] = [];
-      if(links[linkType].indexOf(link) === -1) links[linkType].push(link);
+      if(uniqueLink(link, links[linkType])) links[linkType].push(link);
     }
   }
   if(Object.keys(links).length === 0) return null;
@@ -84,29 +72,74 @@ exports.Parser = (html, siteUrl) => {
 }
 
 /******************************************************************************/
+// LINK ANALYSIS FUNCTIONS
+/******************************************************************************/
+
+// Returns html's next link at the start index.
+function getLink(html, start, prefix, siteUrl) {
+  let urls = getSiteUrlExtensions(siteUrl);
+  let rootUrl = urls[0], lastDirUrl = urls[1]; // Home page & the last directory.
+  let link = html.slice(start, endOfLink(html, start)).replace(/\\\//g, '/');
+  link = decodedLink(prefix, link, html[start - 1] + link);
+  if(link.slice(0,2) == '//') link = 'https:' + link;
+  if(link.slice(0, 4) != 'http') { // Extends current url.
+    let header = (link[0] == '/') ? rootUrl : (link[0] == '#') ? siteUrl : lastDirUrl;
+    link = header + ((header[header.length-1] != '/' && link[0] != '#') ? '/' + link : link);
+  }
+  return formattedLink(link);
+}
+
+// Returns link's type based off of tag/rel/type, if exists.
+function getLinkHtmlType(html, start, prefix) {
+  if(prefix === 'http') return null; // Nested link: type derived by extension.
+  let tags = [html, start, '<', 'style', 'img'];
+  let rels = [html, start, 'rel=', 'stylesheet', 'shortcut icon'];
+  let types = [html, start, 'type=', 'text/css', 'image/x-icon'];
+  var tagAttrib = getLinkAttrib(...tags,(str,e1,e2)=>str.lastIndexOf(e1,e2),(n1,n2)=>n1>n2);
+  if(tagAttrib) return tagAttrib;
+  var relAttrib = getLinkAttrib(...rels,(str,e1,e2)=>str.indexOf(e1,e2),(n1,n2)=>n1<n2);
+  if(relAttrib) return relAttrib;
+  return getLinkAttrib(...types,(str,e1,e2)=>str.indexOf(e1,e2),(n1,n2)=>n1<n2);
+}
+
+// Returns link's <tag>, 'rel', or 'type' attribute.
+function getLinkAttrib(html, start, attrib, css, img, indexFcn, validAttrib) {
+  let attribLength = (attrib === '<') ? 1 : attrib.length + 1;
+  let tagStartIdx = (attrib === '<') ? start : html.lastIndexOf('<', start);
+  let attribIdx = indexFcn(html, attrib, tagStartIdx) + attribLength;
+  let tagEndIdx = indexFcn(html, '>', start);
+  if(attribIdx != attribLength - 1 && validAttrib(attribIdx, tagEndIdx)) {
+    let attribStr = html.slice(attribIdx, endOfLink(html, attribIdx));
+    if(attribStr == css) return 'style';
+    if(attribStr == img || attribStr + ' icon' == img) return 'img';
+  }
+  return null;
+}
+
+/******************************************************************************/
 // EXTENSION FUNCTIONS
 /******************************************************************************/
 
-// Returns base/full site urls w/o & w/ last filename extension.
+// Returns base/full site urls w/o & w/ last directory extension.
 function getSiteUrlExtensions(siteUrl) {
   let firstSlashIdx = siteUrl.indexOf('/', 9); // After 'https://'.
   let lastSlashIdx = siteUrl.lastIndexOf('/') + 1;
-  var lastFileUrl = (lastSlashIdx > 6) ? siteUrl.slice(0, lastSlashIdx) : siteUrl;
+  var lastDirUrl = (lastSlashIdx > 6) ? siteUrl.slice(0, lastSlashIdx) : siteUrl;
   var rootUrl = (firstSlashIdx != -1) ? siteUrl.slice(0, firstSlashIdx) : siteUrl;
-  return [rootUrl, lastFileUrl];
+  return [rootUrl, lastDirUrl];
 }
 
-// Returns a link's file extension.
+// Returns a link's extension.
 function getLinkExtension(link) { // Either at the end, or embedded w/in pre-'?'
-  var fileExtension = link.slice(link.lastIndexOf('.') + 1);
+  var linkExtension = link.slice(link.lastIndexOf('.') + 1);
   let qMarkLastIdx = link.lastIndexOf('?');
   if(qMarkLastIdx == link.indexOf('?') && qMarkLastIdx != -1) { // Embedded extension.
-    let idx = Math.max(link.lastIndexOf('.', qMarkLastIdx), link.lastIndexOf('/', qMarkLastIdx));
-    if(idx != -1 && idx >= qMarkLastIdx - 7) { // Valid embedded extension. 7 = longest extnsn.
-      fileExtension = link.slice(idx, qMarkLastIdx).replace(/\./g, '');
+    let idx = Math.max(link.lastIndexOf('.', qMarkLastIdx), link.lastIndexOf('/', qMarkLastIdx)) + 1;
+    if(idx != 0 && idx >= qMarkLastIdx - 6) { // Valid embedded extension. 6 = longest extnsn.
+      linkExtension = link.slice(idx, qMarkLastIdx);
     }
   }
-  return fileExtension;
+  return linkExtension;
 }
 
 // Returns link extension's file type.
@@ -116,71 +149,52 @@ function getLinkExtensionType(siteUrl, link, extension) {
       if(FILE_EXTENSIONS[type][subtype].indexOf(extension) != -1) return subtype;
     }
   }
-  if(link.includes(siteUrl)) return 'extendsUrl';
-  return 'other';
+  return (link.indexOf(siteUrl) === 0) ? 'extendsUrl' : 'other';
 }
 
 /******************************************************************************/
 // HELPER FUNCTIONS
 /******************************************************************************/
 
-// Returns link's type based off of tag/rel/type, if exists.
-function getLinkHtmlType(start, html) {
-  let tags = [start, html, '<', 'style', 'img'];
-  let rels = [start, html, 'rel="', 'stylesheet', 'shortcut icon'];
-  let types = [start, html, 'type="', 'text/css', 'image/x-icon'];
-  var tagAttrib = getLinkAttrib(...tags,(str,e1,e2)=>str.lastIndexOf(e1,e2),(n1,n2)=>n1>n2);
-  if(tagAttrib) return tagAttrib;
-  var relAttrib = getLinkAttrib(...rels,(str,e1,e2)=>str.indexOf(e1,e2),(n1,n2)=>n1<n2);
-  if(relAttrib) return relAttrib;
-  var typeAttrib = getLinkAttrib(...types,(str,e1,e2)=>str.indexOf(e1,e2),(n1,n2)=>n1<n2);
-  return typeAttrib;
-}
-
-// Returns link's <tag>, 'rel', or 'type' attribute.
-function getLinkAttrib(start, html, attrib, css, img, indexFcn, validAttrib) {
-  let attribIdx = indexFcn(html, attrib, start) + attrib.length;
-  let tagEndIdx = indexFcn(html, '>', start);
-  if(attribIdx != attrib.length - 1 && validAttrib(attribIdx, tagEndIdx)) {
-    let endOfAttrib = (attrib === '<') ? html.indexOf(' ', attribIdx) : 14;
-    let attribStr = html.slice(attribIdx, endOfAttrib);
-    if(attribStr.includes(css)) return 'style';
-    if(attribStr.includes(img)) return 'img';
-  }
-  return null;
-}
-
-// Converts '//' => '/' & '&amp;' => '&' w/in a link (except http/https) & rmvs void(0).
+// Converts '//' => '/', '&amp;' => '&', rmvs void(0) in a link.
 function formattedLink(link) {
-  let headIdx = link.indexOf('//') + 2;
-  let httpHead = link.slice(0, headIdx);
-  let linkTail = link.slice(headIdx).replace(/\/\//g, '/')
-                     .replace(/&amp;/g, '&').replace('javascript:void(0);', '');
-  return httpHead + linkTail;
-}
-
-// Returns the index of the end of the link at the 'start' index.
-function getEndOfLinkIndex(html, start) {
-  let linkEndings = ['"', ' ', '&quot;', '<'];
-  let idxs = linkEndings.map(e => html.indexOf(e, start)).filter(e => e >= 0);
-  return Math.min(...idxs);
+  return link.replace(/\/\//g, '/').replace(/:\//g, '://')
+             .replace(/&amp;/g, '&').replace('javascript:void(0);', '');
 }
 
 // Returns a decoded-uri-ified link.
-function decodedLink(link) {
-  if(link && link[4] && 's:%'.indexOf(link[4]) !== -1) {
+function decodedLink(prefix, link, httpLink) {
+  if(prefix === 'http') link = httpLink;
+  if(prefix != 'http' || (link && link[4] && 's:%'.indexOf(link[4]) !== -1)) {
     try { link = decodeURIComponent(link).replace(/\\\//g, '/'); } catch(err) {}
   }
   return link;
 }
 
-// Returns true if link's non-nested but searching for nested (in js) links.
+// Returns the index of the end of the link at the 'start' index.
+function endOfLink(html, start) {
+  let linkEndings = ['"', ' ', '&quot;', '<', '\\', '\''];
+  let idxs = linkEndings.map(e => html.indexOf(e, start)).filter(e => e >= 0);
+  return Math.min(...idxs);
+}
+
+// Returns true if link's empty, or non-nested while searching for js-nested links.
 function invalidLink(html, start, prefix) {
   if(prefix === 'http') {
     let linkPrefix = html.slice(start - 7, start - 1).toLowerCase();
     if(linkPrefix.includes('href="') || linkPrefix.includes('src="')) return true;
   }
-  return (html[start] == '"' || html[start+1] == '"'); // If link is empty.
+  let char1 = html[start], char2 = html[start+1];
+  return (char1 == '"' || char1 == '\'' || char2 == '"' || char2 == '\'');
+}
+
+// Confirms newLink is unique in linkType group.
+function uniqueLink(newLink, linkType) {
+  if(linkType.indexOf(newLink) != -1) return false;
+  for(let link of linkType) {
+    if(link == newLink + '/' || newLink == link + '/') return false;
+  }
+  return true;
 }
 
 /******************************************************************************/
