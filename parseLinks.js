@@ -79,7 +79,8 @@ exports.Parser = (html, siteUrl) => {
 function getLink(html, start, prefix, siteUrl) {
   let urls = getSiteUrlExtensions(siteUrl);
   let rootUrl = urls[0], lastDirUrl = urls[1]; // Home page & the last directory.
-  let link = html.slice(start, endOfLink(html, start)).replace(/\\\//g, '/');
+  let link = getNewlineWrappedLink(html, start, prefix);
+  if(!link) link = html.slice(start, endOfLink(html, start)).replace(/\\\//g, '/');
   link = decodedLink(prefix, link, html[start - 1] + link);
   if(link.slice(0,2) == '//') link = 'https:' + link;
   if(link.slice(0, 4) != 'http') { // Extends current url.
@@ -195,6 +196,18 @@ function uniqueLink(newLink, linkType) {
     if(link == newLink + '/' || newLink == link + '/') return false;
   }
   return true;
+}
+
+// Returns newline wrapped link, or null if DNE. Occurs in HTML-generating JS functions.
+// EXAMPLE: ... href="+\n"'https://github.com/jrandleman' ...
+function getNewlineWrappedLink(html, start, prefix) {
+  if(prefix != 'http' && (html.slice(start, start + 2) == ' +' || html[start] == '+')) {
+    // Index of next line's quote char & the 2nd inner quote char ending link.
+    let nextLineChar = html.indexOf(html[start - 1], start); // EXAMPLE: "
+    let nextLineEnd = html.indexOf(html[nextLineChar + 1], nextLineChar + 2); // EXAMPLE: '
+    return html.slice(nextLineChar + 2, nextLineEnd).replace(/\\\//g, '/');
+  }
+  return null;
 }
 
 /******************************************************************************/
