@@ -59,7 +59,7 @@ exports.Parser = (html, siteUrl) => {
       if(invalidLink(html, start, prefix)) continue;
       let linkType = getLinkHtmlType(html, start, prefix);
       let link = getLink(html, start, prefix, siteUrl);
-      if(!link.includes('//')) continue;
+      if(!link) continue;
       if(!linkType) { // Couldn't find tag/rel/type for link.
         linkType = getLinkExtensionType(siteUrl, link, getLinkExtension(link));
       }
@@ -87,7 +87,11 @@ function getLink(html, start, prefix, siteUrl) {
     let header = (link[0] == '/') ? rootUrl : (link[0] == '#') ? siteUrl : lastDirUrl;
     link = header + ((header[header.length-1] != '/' && link[0] != '#') ? '/' + link : link);
   }
-  return formattedLink(link);
+  link = formattedLink(link);
+  if(!link.includes('//') || link.indexOf('.') === -1 || '.='.includes(link[link.length-1])) {
+    return null; // Bad link detected: likely from scraping from JS-construction instructions.
+  }
+  return link;
 }
 
 // Returns link's type based off of tag/rel/type, if exists.
@@ -183,10 +187,12 @@ function endOfLink(html, start) {
 function invalidLink(html, start, prefix) {
   if(prefix === 'http') {
     let linkPrefix = html.slice(start - 7, start - 1).toLowerCase();
-    if(linkPrefix.includes('href="') || linkPrefix.includes('src="')) return true;
+    return linkPrefix.includes('href="') || linkPrefix.includes('src="');
   }
-  let char1 = html[start], char2 = html[start+1];
-  return (char1 == '"' || char1 == '\'' || char2 == '"' || char2 == '\'');
+  let invalidFirstChar = html[start-1] != '\'' && html[start-1] != '"';
+  let emptyLinkString = [html[start], html[start+1]].map(e => (e == '"' || e == '\''));
+  let invalidLinkFlags = [invalidFirstChar, ...emptyLinkString].filter(e => e);
+  return invalidLinkFlags.length > 0;
 }
 
 // Confirms newLink is unique in linkType group.
