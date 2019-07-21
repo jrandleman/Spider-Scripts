@@ -13,9 +13,15 @@ const coordsParser = require('<filepath>/parseCoords').Parser;
 ```
 Call the function & operate on the returned JSON once the promise resolves:
 ```javascript
-const locations = ['brasilia', 'paris', 'san francisco', 'brussels', 'beijing', 'tokyo'];
+const locations = [
+  'brasilia', 'paris', 'san francisco', 'brussels', 'beijing', 'tokyo', 'cape town', 
+  'canberra', 'mexico city', 'ottawa', 'costa rica', 'santiago', 'warsaw', 'moscow'
+];
+
 var coordsPromise = coordsParser(locations);
 coordsPromise.then((coordsJSON) => {
-  // Your code here
+  // Work with JSON here
+}).catch((err) => {
+  // Error handling here
 });
 ```
