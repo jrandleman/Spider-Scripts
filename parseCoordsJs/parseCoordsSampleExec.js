@@ -7,7 +7,7 @@ const coordsParser = require('./parseCoords').Parser;
 /******************************************************************************/
 
 // Sample coordinate scraping function execution.
-function sampleCoordQueryExec(locations) {
+function sampleCoordsQueryExec(locations) {
   let coordsPromise = coordsParser(locations);
   coordsPromise.then((coordsJSON) => {
     console.log(coordsJSON);
@@ -16,5 +16,9 @@ function sampleCoordQueryExec(locations) {
   });
 }
 
-const locations = ['brasilia', 'paris', 'san francisco', 'brussels', 'beijing', 'tokyo'];
-sampleCoordQueryExec(locations);
+const locations = [
+  'brasilia', 'paris', 'san francisco', 'brussels', 'beijing', 'tokyo', 'cape town', 
+  'canberra', 'mexico city', 'ottawa', 'costa rica', 'santiago', 'warsaw', 'moscow'
+];
+
+sampleCoordsQueryExec(locations);
