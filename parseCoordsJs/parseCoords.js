@@ -21,48 +21,62 @@ class Location {
   }
 }
 
-// Given array of locations, returns JSON w/ location names, coords, & any errs.
-exports.Parser = function getCoordsJsonPromise(locations) {
-  var promiseArray = [];
-  for(let i = 0, locLength = locations.length; i < locLength; ++i) {
-    promiseArray.push(parseLocationCoords(locations[i]));
-  }
-  return Promise.all(promiseArray);
-}
-
-// Given a location, resolves w/ an object of location name, coordinates, & err.
-async function parseLocationCoords(locationName) {
-  try {
-    var location = new Location(locationName);
-    var searchQuery = locationName + ' lat long';
-    var browser = await puppeteer.launch({ headless: true });
-    var page = await browser.newPage();
-    // Load Google's home page.
-    await page.goto('https://www.google.com/');
-    await page.waitForSelector('input[title="Search"]');
-    // Enter the query & load the next page.
-    await page.type('input[title="Search"]', searchQuery, {delay: 5});
-    page.keyboard.press('Enter');
-    await page.waitForNavigation(); 
-    // Scrape Lat Lng string (if exists).
-    const coordsSelector = 'div[data-attrid="kc:/location/location:coordinates"]';
+// Given locations array, resolves w/ JSON of location names, coords, & any
+// errors, or rejects with a fatal error.
+exports.Parser = function parseLocationCoords(locations) {
+  return new Promise(async(resolve, reject) => {
     try {
-      await page.waitForSelector(coordsSelector, { timeout: 1000 });
-      var coordStr = await page.$eval(coordsSelector, e => e.innerText);
-    } catch(err) {
-      throw `"${searchQuery}": Google query didn't return any Lat/Lng coordinates.`;
+      const coordsSelector = 'div[data-attrid="kc:/location/location:coordinates"]';
+      const searchSelector = 'input[title="Search"]';
+      const locationsLength = locations.length;
+      // Validate locations array, then load chromium & google via puppeteer.
+      if(locationsLength === 0) throw 'Empty "locations" array passed as argument!';
+      var browser = await puppeteer.launch({ headless: true });
+      var page = await browser.newPage();
+      await page.goto('https://www.google.com/');
+      await page.waitForSelector(searchSelector);
+      // Enter the first location's query & load the next page.
+      var searchQuery = locations[0] + ' lat long';
+      await page.type(searchSelector, searchQuery);
+      page.keyboard.press('Enter');
+      await page.waitForNavigation(); 
+      // Scrape Lat/Lng (if present) per location via the search bar on the current page.
+      var locationsJSON = [];
+      for(let i = 0; i < locationsLength; ++i) {
+        var location = new Location(locations[i]), foundCoords = true;
+        var noCoords = `'${searchQuery}': Google query didn't return any Lat/Lng coordinates.`;
+        try { 
+          await page.waitForSelector(coordsSelector, { timeout: 1250 });
+          var coordStr = await page.$eval(coordsSelector, e => e.innerText);
+          var coords = parseCoordinatesString(coordStr);
+        } catch(err) {
+          locationsJSON.push({...location, "err": noCoords});
+          foundCoords = false;
+        }
+        if(foundCoords && !coords[0]) {
+          locationsJSON.push({...location, "err": coords[1]});
+        } else if(foundCoords) {
+          locationsJSON.push({...location, "lat": coords[0], "lng": coords[1]});
+        }
+        // Enter the next location in the search bar on the current page.
+        if(i < locationsLength - 1) {
+          searchQuery = locations[i + 1] + ' lat long';
+          await page.click(searchSelector, { clickCount: 3 });
+          await page.type(searchSelector, searchQuery);
+          page.keyboard.press('Enter');
+          await page.waitForNavigation(); 
+        }
+      }
+      // Wait for browser activity to end before closing.
+      await page.waitFor(250);
+      await browser.close();
+      return resolve(locationsJSON);
+    } catch (err) {
+      await page.waitFor(250);
+      await browser.close();
+      return reject('parseCoords.js rejected with a Fatal Error: ' + err);
     }
-    var coordArr = parseCoordinatesString(coordStr);
-    if(!coordArr[0]) throw coordArr[1];
-    // Wait for browser activity to end before closing.
-    await page.waitFor(250);
-    await browser.close();
-    return Promise.resolve({...location, "lat": coordArr[0], "lng": coordArr[1]});
-  } catch (err) {
-    await page.waitFor(250);
-    await browser.close();
-    return Promise.resolve({...location, "err": err});
-  }
+  });
 }
 
 /******************************************************************************/
