@@ -88,7 +88,8 @@ function getLink(html, start, prefix, siteUrl) {
     link = header + ((header[header.length-1] != '/' && link[0] != '#') ? '/' + link : link);
   }
   link = formattedLink(link);
-  if(!link.includes('//') || link.indexOf('.') === -1 || '.='.includes(link[link.length-1])) {
+  if(!link.includes('//') || link.indexOf('.') === -1 || 
+    '.='.includes(link[link.length-1]) || link.includes('/../')) {
     return null; // Bad link detected: likely from scraping from JS-construction instructions.
   }
   return link;
